@@ -1446,23 +1446,43 @@ tr:hover .tx-actions { opacity: 1; }
           </select>
         </div>
       </div>
+      <div class="fgrp">
+        <label>Category</label>
+        <select class="finput" id="rec-cat"></select>
+      </div>
       <div class="frow">
         <div class="fgrp">
-          <label>Category</label>
-          <select class="finput" id="rec-cat"></select>
+          <label>Frequency</label>
+          <select class="finput" id="rec-freq" onchange="onRecFreqChange()">
+            <option value="monthly">Monthly</option>
+            <option value="biweekly">Bi-weekly (every 2 weeks)</option>
+            <option value="weekly">Weekly</option>
+          </select>
         </div>
-        <div class="fgrp">
+        <!-- Monthly: day of month -->
+        <div class="fgrp" id="rec-field-monthly">
           <label>Day of Month</label>
-          <input type="number" class="finput" id="rec-day" min="1" max="31" placeholder="1" required>
+          <input type="number" class="finput" id="rec-day" min="1" max="31" placeholder="1">
         </div>
-      </div>
-      <div class="fgrp">
-        <label>Frequency</label>
-        <select class="finput" id="rec-freq">
-          <option value="monthly">Monthly</option>
-          <option value="biweekly">Bi-weekly</option>
-          <option value="weekly">Weekly</option>
-        </select>
+        <!-- Weekly: day of week -->
+        <div class="fgrp" id="rec-field-weekly" style="display:none">
+          <label>Day of Week</label>
+          <select class="finput" id="rec-dow">
+            <option value="0">Sunday</option>
+            <option value="1">Monday</option>
+            <option value="2">Tuesday</option>
+            <option value="3">Wednesday</option>
+            <option value="4">Thursday</option>
+            <option value="5" selected>Friday</option>
+            <option value="6">Saturday</option>
+          </select>
+        </div>
+        <!-- Bi-weekly: anchor date -->
+        <div class="fgrp" id="rec-field-biweekly" style="display:none">
+          <label>A date you were / will be paid</label>
+          <input type="date" class="finput" id="rec-anchor">
+          <div class="fhint">App steps every 14 days from this date</div>
+        </div>
       </div>
       <div class="form-footer">
         <button type="button" class="btn btn-ghost" onclick="closeModal('modal-rec')">Cancel</button>
@@ -1895,25 +1915,32 @@ function getUpcomingOccurrences(windowDays = 45) {
     // Skip items the user has marked as skipped for the current month
     if (r.skipped?.includes(thisYM)) return;
 
-    const interval = r.freq === 'weekly' ? 7 : r.freq === 'biweekly' ? 14 : null;
-
-    if (interval) {
-      // For weekly/bi-weekly: find the next occurrence on or after today
-      // using r.day as "day of month for the anchor occurrence this month"
-      // Build an anchor date in the current month
-      const anchor = new Date(now.getFullYear(), now.getMonth(), Math.min(r.day, 28));
-      // Step backward to find the most recent past occurrence at or before today
-      while (anchor > now) anchor.setDate(anchor.getDate() - interval);
-      // Now step forward to find all occurrences within the window
-      const candidate = new Date(anchor);
-      candidate.setDate(candidate.getDate() + interval); // first one after today-anchor
+    if (r.freq === 'weekly') {
+      // r.day = 0-6 day of week (0=Sun … 6=Sat)
+      const dow          = r.day ?? 5; // default Friday
+      const daysToFirst  = (dow - now.getDay() + 7) % 7; // 0 = today
+      const candidate    = new Date(now);
+      candidate.setDate(candidate.getDate() + daysToFirst);
       while (true) {
         const du = Math.round((candidate - now) / 86400000);
         if (du > windowDays) break;
-        if (du >= 0) {
-          results.push({ ...r, daysUntil: du });
-        }
-        candidate.setDate(candidate.getDate() + interval);
+        results.push({ ...r, daysUntil: du });
+        candidate.setDate(candidate.getDate() + 7);
+      }
+    } else if (r.freq === 'biweekly') {
+      // r.anchor = ISO date of a known occurrence; step by 14 days
+      if (!r.anchor) return; // no anchor configured yet
+      const anchor = new Date(r.anchor); anchor.setHours(0, 0, 0, 0);
+      // Step backward until anchor is ≤ today
+      while (anchor > now) anchor.setDate(anchor.getDate() - 14);
+      // Then step forward into the window
+      const candidate = new Date(anchor);
+      candidate.setDate(candidate.getDate() + 14);
+      while (true) {
+        const du = Math.round((candidate - now) / 86400000);
+        if (du > windowDays) break;
+        if (du >= 0) results.push({ ...r, daysUntil: du });
+        candidate.setDate(candidate.getDate() + 14);
       }
     } else {
       // Monthly: one occurrence per month at r.day
@@ -2463,15 +2490,32 @@ function renderBudgets() {
 /* ═══════════════════════════════════════════════════
    11. RECURRING
 ═══════════════════════════════════════════════════ */
+function onRecFreqChange() {
+  const freq = $('rec-freq').value;
+  $('rec-field-monthly').style.display  = freq === 'monthly'  ? '' : 'none';
+  $('rec-field-weekly').style.display   = freq === 'weekly'   ? '' : 'none';
+  $('rec-field-biweekly').style.display = freq === 'biweekly' ? '' : 'none';
+}
+
 function openRecModal(id) {
   const r = id ? D.recurring.find(x => x.id === id) : null;
   $('rec-modal-title').textContent = r ? 'Edit Recurring Item' : 'Add Recurring Item';
-  $('rec-id').value      = r?.id ?? '';
-  $('rec-name').value    = r?.name ?? '';
-  $('rec-amount').value  = r?.amount ?? '';
-  $('rec-type').value    = r?.type ?? 'expense';
-  $('rec-day').value     = r?.day ?? '';
-  $('rec-freq').value    = r?.freq ?? 'monthly';
+  $('rec-id').value     = r?.id     ?? '';
+  $('rec-name').value   = r?.name   ?? '';
+  $('rec-amount').value = r?.amount ?? '';
+  $('rec-type').value   = r?.type   ?? 'expense';
+  $('rec-freq').value   = r?.freq   ?? 'monthly';
+  onRecFreqChange();   // show the right date field first
+
+  const freq = r?.freq ?? 'monthly';
+  if (freq === 'weekly') {
+    $('rec-dow').value    = r?.day ?? 5;           // 0-6, default Friday
+  } else if (freq === 'biweekly') {
+    $('rec-anchor').value = r?.anchor ?? '';
+  } else {
+    $('rec-day').value    = r?.day ?? '';           // 1-31
+  }
+
   fillCatSelect('rec-cat', r?.category);
   openModal('modal-rec');
   setTimeout(() => $('rec-name').focus(), 60);
@@ -2479,17 +2523,32 @@ function openRecModal(id) {
 
 function submitRec(e) {
   e.preventDefault();
-  const id = $('rec-id').value;
+  const id       = $('rec-id').value;
   const existing = id ? D.recurring.find(r => r.id === id) : null;
+  const freq     = $('rec-freq').value;
+
+  // Validate the frequency-specific date field
+  if (freq === 'monthly' && !$('rec-day').value) {
+    toast('Enter a day of month', 'error'); return;
+  }
+  if (freq === 'biweekly' && !$('rec-anchor').value) {
+    toast('Enter an anchor date', 'error'); return;
+  }
+
   const rec = {
     id:       id || uid(),
     name:     $('rec-name').value.trim(),
     amount:   parseFloat($('rec-amount').value),
     type:     $('rec-type').value,
     category: $('rec-cat').value,
-    day:      parseInt($('rec-day').value),
-    freq:     $('rec-freq').value,
-    skipped:  existing?.skipped || [],   // preserve skip history on edit
+    freq,
+    // day: for monthly = 1-31; for weekly = 0-6 (day of week); for biweekly = 0 (unused)
+    day:      freq === 'monthly'  ? parseInt($('rec-day').value)
+            : freq === 'weekly'   ? parseInt($('rec-dow').value)
+            : 0,
+    // anchor: only used for biweekly
+    anchor:   freq === 'biweekly' ? $('rec-anchor').value : (existing?.anchor ?? ''),
+    skipped:  existing?.skipped || [],
   };
   if (id) {
     const i = D.recurring.findIndex(r => r.id === id);
@@ -2585,7 +2644,10 @@ function renderRecurring() {
     const du        = nextDue[r.id] ?? null;
     const soon      = du !== null && du <= 7;
     const isSkipped = r.skipped?.includes(thisYM);
-    const freqLabel = { monthly: 'Monthly', biweekly: 'Bi-weekly', weekly: 'Weekly' }[r.freq] ?? r.freq;
+    const DOW       = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const schedLabel = r.freq === 'weekly'   ? `Every ${DOW[r.day] ?? 'Fri'}`
+                     : r.freq === 'biweekly' ? `Every 2 wks${r.anchor ? ' from ' + fmtDate(r.anchor) : ''}`
+                     : `Monthly · Day ${r.day}`;
     const dueLabel  = du === null ? '' : du === 0 ? 'due today' : du === 1 ? 'due tomorrow' : `due in ${du}d`;
     return `
       <div class="rec-card${isSkipped ? ' rec-card-skipped' : ''}">
@@ -2595,7 +2657,7 @@ function renderRecurring() {
             ${esc(r.name)}
             ${isSkipped ? '<span class="skip-badge">Skipped this month</span>' : (soon ? `<span class="due-soon">${dueLabel}</span>` : '')}
           </div>
-          <div class="rec-meta">${freqLabel} · Day ${r.day} · <span class="pill pill-cat">${esc(r.category)}</span></div>
+          <div class="rec-meta">${schedLabel} · <span class="pill pill-cat">${esc(r.category)}</span></div>
         </div>
         <div class="rec-amt ${r.type}">${r.type==='income'?'+':'-'}${fmt(r.amount)}</div>
         <div style="display:flex;gap:4px;flex-wrap:wrap">
@@ -3156,23 +3218,42 @@ function setSyncChip(msg, state /* 'ok'|'err'|'busy'|'' */) {
   }
 }
 
-async function pushToGist() {
+// Debounce pushes so rapid saves (typing, filtering) don't flood the GitHub API
+let _pushTimer = null;
+function pushToGist() {
+  clearTimeout(_pushTimer);
+  _pushTimer = setTimeout(_doPush, 2500);
+}
+
+async function _doPush() {
   const cfg = loadGistCfg();
   if (!cfg.id || !cfg.token) return;
+  setSyncChip('☁ Saving…', 'busy');
   try {
     const res = await fetch(`https://api.github.com/gists/${cfg.id}`, {
       method:  'PATCH',
       headers: { 'Authorization': `Bearer ${cfg.token}`, 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify({ ...D, _ts: Date.now() }) } } }),
+      body:    JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify({ ...D, _ts: D._ts }) } } }),
     });
-    if (!res.ok) throw new Error(res.status);
+    if (!res.ok) {
+      const msg = res.status === 401 ? '401 — check token'
+                : res.status === 404 ? '404 — check Gist ID'
+                : res.status === 422 ? '422 — data too large'
+                : res.status === 403 ? '403 — rate limited, retrying soon'
+                : `error ${res.status}`;
+      throw new Error(msg);
+    }
     const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     setSyncChip(`☁ Synced ${t}`, 'ok');
     cfg.lastSync = Date.now();
     saveGistCfg(cfg);
   } catch (e) {
-    setSyncChip('☁ Sync failed', 'err');
+    setSyncChip(`☁ ${e.message}`, 'err');
     console.warn('Gist push failed', e);
+    // Retry once after 30 s for transient errors (rate limits, network blips)
+    if (String(e.message).includes('rate limited') || String(e.message).includes('fetch')) {
+      setTimeout(_doPush, 30000);
+    }
   }
 }
 
