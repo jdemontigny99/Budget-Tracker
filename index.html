@@ -2,8 +2,34 @@
 <html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>BudgetFlow — Personal Finance</title>
+
+<!-- PWA / installability -->
+<meta name="theme-color" content="#4f46e5">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BudgetFlow">
+<!-- Inline manifest injected by JS below so no extra file is needed -->
+<script>
+(function(){
+  const icon = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%234f46e5'/%3E%3Ctext y='.88em' font-size='68' x='14'%3E%F0%9F%92%B0%3C/text%3E%3C/svg%3E";
+  const m = { name:'BudgetFlow', short_name:'BudgetFlow',
+    description:'Personal finance dashboard',
+    start_url:'./', display:'standalone', orientation:'portrait-primary',
+    background_color:'#0f172a', theme_color:'#4f46e5',
+    icons:[{src:icon,sizes:'any',type:'image/svg+xml',purpose:'any maskable'}]
+  };
+  const link = document.createElement('link');
+  link.rel = 'manifest';
+  link.href = URL.createObjectURL(new Blob([JSON.stringify(m)],{type:'application/manifest+json'}));
+  document.currentScript.parentNode.insertBefore(link, document.currentScript);
+  if ('serviceWorker' in navigator)
+    navigator.serviceWorker.register('./sw.js').catch(()=>{});
+})();
+</script>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
 <style>
 /* ─────────────────────────────────────────────
@@ -522,7 +548,64 @@ tr:hover .tx-actions { opacity: 1; }
 .tx-bal-pos { color: var(--c-green); }
 .tx-bal-neg { color: var(--c-red);   }
 .tx-tfoot-row td { padding: 9px 14px; font-size: .82rem; background: var(--c-surface2); border-top: 2px solid var(--c-border); }
-@media (max-width: 640px) { .tx-bal-col { display: none; } }
+/* ─────────────────────────────────────────────
+   MOBILE — responsive overrides
+───────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .tx-bal-col  { display: none; }
+  .col-type    { display: none; }          /* hide Type column on phones */
+  .main        { padding: 10px; }
+  .topbar      { padding: 0 10px; }
+  .topbar-logo span { display: none; }     /* hide wordmark, keep icon */
+  .nav-btn     { padding: 0 10px; font-size: .78rem; }
+  .modal       { margin: 8px; width: calc(100% - 16px); max-height: 92dvh; overflow-y: auto; }
+  .frow        { flex-direction: column; }
+  .metrics-grid { grid-template-columns: repeat(2, 1fr) !important; }
+  .dash-grid   { grid-template-columns: 1fr !important; }
+  .rec-card    { flex-wrap: wrap; gap: 8px; }
+  .budget-group-children { padding-left: 10px; }
+  .inline-cat-sel { max-width: 120px; font-size: .7rem; }
+}
+@media (max-width: 420px) {
+  .metrics-grid { grid-template-columns: 1fr 1fr; }
+  .tx-table th, .tx-table td { padding: 8px 6px; }
+}
+
+/* ─────────────────────────────────────────────
+   SKIP BADGE (Recurring)
+───────────────────────────────────────────── */
+.rec-card-skipped { opacity: .55; }
+.skip-badge {
+  display: inline-block;
+  font-size: .68rem;
+  font-weight: 600;
+  color: var(--c-yellow);
+  background: var(--c-yellow-l);
+  border-radius: var(--radius-sm);
+  padding: 2px 7px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+/* ─────────────────────────────────────────────
+   SYNC STATUS CHIP (header)
+───────────────────────────────────────────── */
+.sync-chip {
+  font-size: .72rem;
+  padding: 3px 9px;
+  border-radius: 99px;
+  border: 1px solid var(--c-border);
+  background: var(--c-surface2);
+  color: var(--c-text3);
+  white-space: nowrap;
+  cursor: default;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sync-chip.ok   { color: var(--c-green); border-color: var(--c-green-l); background: var(--c-green-l); }
+.sync-chip.err  { color: var(--c-red);   border-color: var(--c-red-l);   background: var(--c-red-l);   }
+.sync-chip.busy { color: var(--c-text3); }
 
 /* Pills */
 .pill {
@@ -562,6 +645,69 @@ tr:hover .tx-actions { opacity: 1; }
 }
 .budget-footer { display: flex; justify-content: space-between; margin-top: 5px; }
 .budget-footer span { font-size: .74rem; color: var(--c-text3); }
+
+/* ─────────────────────────────────────────────
+   BUDGET GROUPS (subcategory grouping)
+───────────────────────────────────────────── */
+.budget-group {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+.budget-group-hd {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 13px 18px 0;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.budget-group-name { font-weight: 700; font-size: .95rem; }
+.budget-group-summary { font-size: .79rem; color: var(--c-text3); }
+.budget-group-bar { padding: 8px 18px 0; }
+.budget-group-children {
+  margin-top: 10px;
+  padding: 8px 14px 8px 28px;
+  border-top: 1px solid var(--c-border);
+  background: var(--c-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.budget-group-children .budget-card {
+  margin-bottom: 0;
+  border-left: 3px solid var(--c-primary);
+}
+
+/* ─────────────────────────────────────────────
+   CATEGORY TREE (Settings)
+───────────────────────────────────────────── */
+.cat-tree { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+.cat-tree-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.cat-tree-children { padding-left: 22px; margin-top: 5px; display: flex; flex-direction: column; gap: 5px; }
+.cat-tree-child { display: flex; align-items: center; gap: 6px; }
+.cat-child-arrow { color: var(--c-text3); font-size: .85rem; user-select: none; }
+.cat-tag-child { background: var(--c-bg); font-size: .78rem; opacity: .9; }
+
+/* ─────────────────────────────────────────────
+   INLINE CATEGORY SELECT (Transactions table)
+───────────────────────────────────────────── */
+.inline-cat-sel {
+  font-size: .74rem;
+  font-family: inherit;
+  background: var(--c-surface);
+  color: var(--c-text1);
+  border: 1px solid var(--c-border);
+  border-radius: 20px;
+  padding: 3px 8px 3px 10px;
+  cursor: pointer;
+  max-width: 160px;
+  transition: border-color .15s, box-shadow .15s;
+}
+.inline-cat-sel:hover { border-color: var(--c-primary); }
+.inline-cat-sel:focus { outline: none; border-color: var(--c-primary); box-shadow: 0 0 0 3px var(--c-primary-l); }
 
 /* ─────────────────────────────────────────────
    RECURRING
@@ -855,6 +1001,7 @@ tr:hover .tx-actions { opacity: 1; }
       <div class="balance-chip">Balance: <strong id="hdr-balance">$0.00</strong></div>
     </div>
     <div class="topbar-right">
+      <span class="sync-chip" id="sync-chip" title="Cloud sync status" style="display:none"></span>
       <button class="theme-btn" id="theme-btn">🌙 Dark</button>
       <button class="btn btn-primary btn-sm" onclick="openTxModal()">＋ Add</button>
     </div>
@@ -933,7 +1080,7 @@ tr:hover .tx-actions { opacity: 1; }
           <thead>
             <tr>
               <th>Date</th><th>Description</th><th>Category</th>
-              <th>Type</th><th class="text-right">Amount</th>
+              <th class="col-type">Type</th><th class="text-right">Amount</th>
               <th class="text-right tx-bal-col">Balance</th><th></th>
             </tr>
           </thead>
@@ -1090,15 +1237,49 @@ tr:hover .tx-actions { opacity: 1; }
             </div>
           </label>
         </div>
+        <div style="margin-top:12px">
+          <button class="btn btn-ghost btn-sm" onclick="recalcRollovers()">↻ Recalculate all rollovers</button>
+          <div class="text-xs text-muted" style="margin-top:4px">Use if rollover amounts look wrong after editing a budget mid-month.</div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-hd">Cloud Sync — GitHub Gist</div>
+        <p class="text-xs text-muted" style="margin-bottom:12px">
+          Store your data in a secret GitHub Gist so it syncs across all your devices automatically.
+          <a href="https://gist.github.com" target="_blank" rel="noopener" style="color:var(--c-primary)">Create a Gist →</a>
+        </p>
+        <div class="frow" style="max-width:560px;margin-bottom:0">
+          <div class="fgrp">
+            <label>Gist ID</label>
+            <input type="text" class="finput" id="s-gist-id" placeholder="abc1234…" autocomplete="off" spellcheck="false">
+            <div class="fhint">The long ID from the Gist URL: gist.github.com/user/<strong>THIS_PART</strong></div>
+          </div>
+          <div class="fgrp">
+            <label>Personal Access Token</label>
+            <input type="password" class="finput" id="s-gist-token" placeholder="ghp_…" autocomplete="off">
+            <div class="fhint">Create at GitHub → Settings → Developer settings → Personal access tokens (needs <em>gist</em> scope only)</div>
+          </div>
+        </div>
+        <div class="flex gap-2" style="margin-top:10px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" onclick="saveGistSettings()">Save &amp; Sync</button>
+          <button class="btn btn-ghost btn-sm" onclick="syncNow()">↻ Sync Now</button>
+          <span id="sync-status" class="text-xs text-muted"></span>
+        </div>
       </div>
 
       <div class="settings-section">
         <div class="settings-hd">Categories</div>
-        <div id="s-cats" style="margin-bottom:12px"></div>
-        <div class="flex gap-2">
-          <input type="text" class="finput" id="s-newcat" placeholder="New category name" style="max-width:240px">
+        <div id="s-cats" style="margin-bottom:14px"></div>
+        <div class="font-semibold text-sm" style="margin-bottom:6px">Add Category</div>
+        <div class="flex gap-2" style="flex-wrap:wrap;align-items:center">
+          <input type="text" class="finput" id="s-newcat" placeholder="Category name" style="max-width:190px">
+          <select class="finput" id="s-newcat-parent" style="max-width:190px">
+            <option value="">— top level —</option>
+          </select>
           <button class="btn btn-ghost btn-sm" onclick="addCategory()">Add</button>
         </div>
+        <div class="text-xs text-muted" style="margin-top:5px">Choose "top level" for a parent category, or pick a parent to create a subcategory under it.</div>
       </div>
 
       <div class="settings-section">
@@ -1313,6 +1494,7 @@ function defaultData() {
     transactions:     [],
     budgets:          {},
     recurring:        [],
+    categoryParents:  {},  // { childName: parentName } — one level deep only
     // ── Paycheck schedule ──
     paycheckFreq:     'semimonthly', // 'monthly' | 'semimonthly' | 'biweekly' | 'weekly'
     paycheckDay1:     1,             // primary pay day of month (monthly / semi-monthly)
@@ -1340,7 +1522,9 @@ function loadData() {
 }
 
 function saveData() {
+  D._ts = Date.now();  // timestamp used for conflict resolution during sync
   localStorage.setItem(STORE_KEY, JSON.stringify(D));
+  pushToGist();        // async — non-blocking
 }
 
 /* ═══════════════════════════════════════════════════
@@ -1562,16 +1746,12 @@ function renderDashboard() {
     const avail = availableForBudget(cat, ym);
     return avail > 0 && spentInMonth(cat, ym) > avail;
   });
-  const warnCats = Object.keys(D.budgets).filter(cat => {
-    const avail = availableForBudget(cat, ym);
-    const spent = spentInMonth(cat, ym);
-    return avail > 0 && spent >= avail * 0.9 && spent <= avail;
-  });
   const bannerEl = $('dash-alert-banner');
   if (overCats.length) {
-    bannerEl.innerHTML = `<div class="alert-banner">⚠️ Over budget in: <strong>${overCats.join(', ')}</strong> — <a href="#" onclick="goTab('budgets')">Review budgets →</a></div>`;
-  } else if (warnCats.length) {
-    bannerEl.innerHTML = `<div class="alert-banner alert-warn">⚡ Approaching limit in: <strong>${warnCats.join(', ')}</strong></div>`;
+    const label = overCats.length === 1
+      ? `<strong>${esc(overCats[0])}</strong>`
+      : `<strong>${overCats.length} categories</strong>`;
+    bannerEl.innerHTML = `<div class="alert-banner">⚠️ Over budget in: ${label} — <a href="#" onclick="goTab('budgets')">Review budgets →</a></div>`;
   } else {
     bannerEl.innerHTML = '';
   }
@@ -1710,7 +1890,11 @@ function getUpcomingOccurrences(windowDays = 45) {
   const now = new Date(); now.setHours(0, 0, 0, 0);
   const results = [];
 
+  const thisYM = currentYM();
   D.recurring.forEach(r => {
+    // Skip items the user has marked as skipped for the current month
+    if (r.skipped?.includes(thisYM)) return;
+
     const interval = r.freq === 'weekly' ? 7 : r.freq === 'biweekly' ? 14 : null;
 
     if (interval) {
@@ -1908,8 +2092,54 @@ function openTxModal(id) {
   setTimeout(() => $('tx-amount').focus(), 60);
 }
 
-function fillCatSelect(selectId, selected) {
-  fillSelect($(selectId), D.categories, selected);
+/** Returns categories with no parent (root level). */
+function topLevelCats() {
+  const p = D.categoryParents || {};
+  return D.categories.filter(c => !p[c]);
+}
+
+/** Returns direct children of a parent category. */
+function childCats(parent) {
+  const p = D.categoryParents || {};
+  return D.categories.filter(c => p[c] === parent);
+}
+
+/**
+ * Build <option>/<optgroup> HTML for a category <select>.
+ * @param {string}   selected  - currently selected value
+ * @param {string[]} [allowList] - if given, only include these categories
+ */
+function catOptgroupsHtml(selected, allowList) {
+  const all  = allowList || D.categories;
+  const tops = topLevelCats().filter(t =>
+    all.includes(t) || childCats(t).some(k => all.includes(k))
+  );
+  let html = '';
+  for (const t of tops) {
+    const kids = childCats(t).filter(k => all.includes(k));
+    if (kids.length) {
+      html += `<optgroup label="${esc(t)}">`;
+      // If parent itself is also selectable (e.g. existing transactions), include it
+      if (all.includes(t)) {
+        html += `<option value="${esc(t)}"${t === selected ? ' selected' : ''}>${esc(t)}</option>`;
+      }
+      for (const k of kids) {
+        html += `<option value="${esc(k)}"${k === selected ? ' selected' : ''}>${esc(k)}</option>`;
+      }
+      html += `</optgroup>`;
+    } else {
+      html += `<option value="${esc(t)}"${t === selected ? ' selected' : ''}>${esc(t)}</option>`;
+    }
+  }
+  return html;
+}
+
+/** Fill a category <select> element using optgroups where subcategories exist. */
+function fillCatSelect(selectId, selected, allowList) {
+  const sel = $(selectId);
+  if (!sel) return;
+  const prev = selected !== undefined ? selected : sel.value;
+  sel.innerHTML = catOptgroupsHtml(prev, allowList);
 }
 
 function buildDescSuggestions() {
@@ -1927,15 +2157,7 @@ function quickDate(which, rawDate) {
 }
 
 function onTxTypeChange() {
-  // Reorder: put Salary first for income
-  const type = $('tx-type').value;
-  if (type === 'income') {
-    const income = ['Salary', 'Other'];
-    const ordered = [...D.categories.filter(c => income.includes(c)), ...D.categories.filter(c => !income.includes(c))];
-    fillSelect($('tx-cat'), ordered, $('tx-cat').value);
-  } else {
-    fillCatSelect('tx-cat', $('tx-cat').value);
-  }
+  fillCatSelect('tx-cat', $('tx-cat').value);
 }
 
 function submitTx(e) {
@@ -1994,6 +2216,18 @@ function deleteTx(id) {
   });
 }
 
+/** Inline category change from the transactions table */
+function updateTxCat(id, cat) {
+  const tx = D.transactions.find(t => t.id === id);
+  if (!tx || tx.category === cat) return;
+  tx.category = cat;
+  clearRolloverCache();
+  saveData();
+  renderDashboard();
+  // Don't full-re-render the table — just update the running-balance column
+  // (budget bars on dashboard are updated; the select already shows the new value)
+}
+
 function fillFilterDropdowns() {
   const months = [...new Set(D.transactions.map(t => t.date.slice(0, 7)))].sort().reverse();
   const mSel = $('flt-month');
@@ -2001,10 +2235,9 @@ function fillFilterDropdowns() {
   mSel.innerHTML = '<option value="">All Months</option>' +
     months.map(m => `<option value="${m}"${m===prev?' selected':''}>${monthLabel(m)}</option>`).join('');
 
-  const cSel = $('flt-cat');
+  const cSel  = $('flt-cat');
   const prevC = cSel.value;
-  cSel.innerHTML = '<option value="">All Categories</option>' +
-    D.categories.map(c => `<option value="${esc(c)}"${c===prevC?' selected':''}>${esc(c)}</option>`).join('');
+  cSel.innerHTML = '<option value="">All Categories</option>' + catOptgroupsHtml(prevC);
 }
 
 /**
@@ -2064,8 +2297,8 @@ function renderTxTable() {
         <div style="font-weight:500">${esc(t.description) || '<span class="text-muted">—</span>'}</div>
         ${t.notes ? `<div class="text-xs text-muted">${esc(t.notes)}</div>` : ''}
       </td>
-      <td><span class="pill pill-cat">${esc(t.category)}</span></td>
-      <td><span class="pill pill-${t.type}">${t.type}</span></td>
+      <td><select class="inline-cat-sel" data-id="${t.id}" onchange="updateTxCat(this.dataset.id,this.value)">${catOptgroupsHtml(t.category)}</select></td>
+      <td class="col-type"><span class="pill pill-${t.type}">${t.type}</span></td>
       <td class="text-right ${t.type==='income'?'tx-amt-pos':'tx-amt-neg'}" style="white-space:nowrap">
         ${t.type==='income'?'+':'-'}${fmt(t.amount)}
       </td>
@@ -2121,7 +2354,7 @@ function openBudgetModal(cat) {
     return;
   }
 
-  fillSelect($('budget-cat'), available, cat);
+  fillCatSelect('budget-cat', cat, available);
   $('budget-cat').disabled = !!cat;
   openModal('modal-budget');
   setTimeout(() => $('budget-amount').focus(), 60);
@@ -2163,11 +2396,11 @@ function deleteBudget(cat) {
 }
 
 function renderBudgets() {
-  const ym   = currentYM();
-  const cats = Object.keys(D.budgets);
-  const el   = $('budgets-list');
+  const ym          = currentYM();
+  const allBudgeted = Object.keys(D.budgets);
+  const el          = $('budgets-list');
 
-  if (!cats.length) {
+  if (!allBudgeted.length) {
     el.innerHTML = `<div class="empty">
       <div class="empty-icon">🎯</div>
       <div class="empty-title">No budgets set up yet</div>
@@ -2176,7 +2409,55 @@ function renderBudgets() {
     return;
   }
 
-  el.innerHTML = cats.map(cat => budgetBar(cat, ym, true)).join('');
+  const rendered = new Set();
+  let html = '';
+
+  for (const parent of topLevelCats()) {
+    const kids          = childCats(parent).filter(k => D.budgets[k]);
+    const parentBudget  = D.budgets[parent];
+
+    if (kids.length) {
+      // ── Parent group with children ──────────────────
+      const totalBudgeted = kids.reduce((s, k) => s + (D.budgets[k]?.amount || 0), 0)
+        + (parentBudget?.amount || 0);
+      const totalSpent    = kids.reduce((s, k) => s + spentInMonth(k, ym), 0)
+        + (parentBudget ? spentInMonth(parent, ym) : 0);
+      const groupPct      = totalBudgeted > 0 ? Math.min(totalSpent / totalBudgeted * 100, 100) : 0;
+      const groupOver     = totalBudgeted > 0 && totalSpent > totalBudgeted;
+      const groupCls      = groupPct < 75 ? 'green' : groupPct < 100 ? 'yellow' : 'red';
+      const groupLeft     = totalBudgeted - totalSpent;
+
+      html += `<div class="budget-group">
+        <div class="budget-group-hd">
+          <span class="budget-group-name">${esc(parent)}</span>
+          <span class="budget-group-summary">
+            ${fmt(totalSpent)} / ${fmt(totalBudgeted)} &nbsp;·&nbsp;
+            <span class="${groupLeft < 0 ? 'text-red' : 'text-green'}">${groupLeft < 0 ? fmt(-groupLeft) + ' over' : fmt(groupLeft) + ' left'}</span>
+          </span>
+        </div>
+        <div class="budget-group-bar">
+          <div class="prog-track" style="height:5px">
+            <div class="prog-fill ${groupOver ? 'red' : groupCls}" style="width:${groupPct}%"></div>
+          </div>
+        </div>
+        <div class="budget-group-children">
+          ${kids.map(k => { rendered.add(k); return budgetBar(k, ym, true); }).join('')}
+          ${parentBudget ? (() => { rendered.add(parent); return budgetBar(parent, ym, true); })() : ''}
+        </div>
+      </div>`;
+    } else if (parentBudget) {
+      // ── Standalone category ──────────────────────────
+      rendered.add(parent);
+      html += budgetBar(parent, ym, true);
+    }
+  }
+
+  // Orphaned budgets (parent deleted, child now standalone)
+  allBudgeted.filter(c => !rendered.has(c)).forEach(c => {
+    html += budgetBar(c, ym, true);
+  });
+
+  el.innerHTML = html;
 }
 
 /* ═══════════════════════════════════════════════════
@@ -2191,7 +2472,7 @@ function openRecModal(id) {
   $('rec-type').value    = r?.type ?? 'expense';
   $('rec-day').value     = r?.day ?? '';
   $('rec-freq').value    = r?.freq ?? 'monthly';
-  fillSelect($('rec-cat'), D.categories, r?.category);
+  fillCatSelect('rec-cat', r?.category);
   openModal('modal-rec');
   setTimeout(() => $('rec-name').focus(), 60);
 }
@@ -2199,6 +2480,7 @@ function openRecModal(id) {
 function submitRec(e) {
   e.preventDefault();
   const id = $('rec-id').value;
+  const existing = id ? D.recurring.find(r => r.id === id) : null;
   const rec = {
     id:       id || uid(),
     name:     $('rec-name').value.trim(),
@@ -2207,6 +2489,7 @@ function submitRec(e) {
     category: $('rec-cat').value,
     day:      parseInt($('rec-day').value),
     freq:     $('rec-freq').value,
+    skipped:  existing?.skipped || [],   // preserve skip history on edit
   };
   if (id) {
     const i = D.recurring.findIndex(r => r.id === id);
@@ -2295,23 +2578,32 @@ function renderRecurring() {
     if (nextDue[o.id] === undefined) nextDue[o.id] = o.daysUntil;
   });
 
-  const emojis = { income: '💰', expense: '📤' };
+  const emojis  = { income: '💰', expense: '📤' };
+  const thisYM  = currentYM();
 
   el.innerHTML = D.recurring.map(r => {
-    const du   = nextDue[r.id] ?? null;
-    const soon = du !== null && du <= 7;
+    const du        = nextDue[r.id] ?? null;
+    const soon      = du !== null && du <= 7;
+    const isSkipped = r.skipped?.includes(thisYM);
     const freqLabel = { monthly: 'Monthly', biweekly: 'Bi-weekly', weekly: 'Weekly' }[r.freq] ?? r.freq;
     const dueLabel  = du === null ? '' : du === 0 ? 'due today' : du === 1 ? 'due tomorrow' : `due in ${du}d`;
     return `
-      <div class="rec-card">
+      <div class="rec-card${isSkipped ? ' rec-card-skipped' : ''}">
         <div class="rec-icon ${r.type}">${emojis[r.type]}</div>
         <div class="rec-body">
-          <div class="rec-name">${esc(r.name)}${soon ? `<span class="due-soon">${dueLabel}</span>` : ''}</div>
+          <div class="rec-name">
+            ${esc(r.name)}
+            ${isSkipped ? '<span class="skip-badge">Skipped this month</span>' : (soon ? `<span class="due-soon">${dueLabel}</span>` : '')}
+          </div>
           <div class="rec-meta">${freqLabel} · Day ${r.day} · <span class="pill pill-cat">${esc(r.category)}</span></div>
         </div>
         <div class="rec-amt ${r.type}">${r.type==='income'?'+':'-'}${fmt(r.amount)}</div>
-        <div style="display:flex;gap:4px">
-          <button class="btn btn-ghost btn-xs" onclick="postRec('${r.id}')" title="Record as transaction today">Post</button>
+        <div style="display:flex;gap:4px;flex-wrap:wrap">
+          ${isSkipped
+            ? `<button class="btn btn-ghost btn-xs" onclick="unskipRec('${r.id}')">Unskip</button>`
+            : `<button class="btn btn-ghost btn-xs" onclick="postRec('${r.id}')" title="Record as transaction today">Post</button>
+               <button class="btn btn-ghost btn-xs" onclick="skipRec('${r.id}')" title="Skip this month" style="color:var(--c-yellow)">Skip</button>`
+          }
           <button class="icon-btn" onclick="openRecModal('${r.id}')" title="Edit">✎</button>
           <button class="icon-btn" onclick="deleteRec('${r.id}')" title="Delete" style="color:var(--c-red)">✕</button>
         </div>
@@ -2508,9 +2800,41 @@ function renderSettings() {
 
   onPayFreqChange(freq); // show correct fields
 
-  $('s-cats').innerHTML = D.categories.map(c => `
-    <span class="cat-tag">${esc(c)}<button class="cat-tag-del" onclick="removeCat('${esc(c).replace(/'/g, "\\'")}')">×</button></span>
-  `).join('');
+  // ── Gist sync fields ──────────────────────────────
+  const gistCfg = loadGistCfg();
+  if ($('s-gist-id'))    $('s-gist-id').value    = gistCfg.id    || '';
+  if ($('s-gist-token')) $('s-gist-token').value = gistCfg.token || '';
+
+  // ── Category tree ─────────────────────────────────
+  const tops = topLevelCats();
+  let catsHtml = '<div class="cat-tree">';
+  for (const t of tops) {
+    const kids = childCats(t);
+    catsHtml += `<div class="cat-tree-group">
+      <div class="cat-tree-row">
+        <span class="cat-tag">${esc(t)}<button class="cat-tag-del" data-cat="${esc(t)}" onclick="removeCat(this.dataset.cat)">×</button></span>
+      </div>`;
+    if (kids.length) {
+      catsHtml += `<div class="cat-tree-children">`;
+      for (const k of kids) {
+        catsHtml += `<div class="cat-tree-child">
+          <span class="cat-child-arrow">↳</span>
+          <span class="cat-tag cat-tag-child">${esc(k)}<button class="cat-tag-del" data-cat="${esc(k)}" onclick="removeCat(this.dataset.cat)">×</button></span>
+        </div>`;
+      }
+      catsHtml += `</div>`;
+    }
+    catsHtml += `</div>`;
+  }
+  catsHtml += '</div>';
+  $('s-cats').innerHTML = catsHtml;
+
+  // Populate the parent-select for new category form
+  const parentSel = $('s-newcat-parent');
+  if (parentSel) {
+    parentSel.innerHTML = '<option value="">— top level —</option>' +
+      tops.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
+  }
 }
 
 /** Show/hide the frequency-specific date fields */
@@ -2563,25 +2887,41 @@ function saveGlobalSettings() {
 }
 
 function addCategory() {
-  const name = $('s-newcat').value.trim();
+  const name   = $('s-newcat').value.trim();
+  const parent = $('s-newcat-parent')?.value || '';
   if (!name) return;
   if (D.categories.includes(name)) { toast('Category already exists', 'error'); return; }
+  // Prevent nesting a subcategory under another subcategory
+  if (parent && D.categoryParents?.[parent]) {
+    toast('Cannot nest more than one level deep', 'error'); return;
+  }
+  if (!D.categoryParents) D.categoryParents = {};
   D.categories.push(name);
+  if (parent) D.categoryParents[name] = parent;
   saveData();
   $('s-newcat').value = '';
+  const parentSel = $('s-newcat-parent');
+  if (parentSel) parentSel.value = '';
   renderSettings();
-  toast(`"${name}" added`);
+  toast(parent ? `"${name}" added under "${parent}"` : `"${name}" added`);
 }
 
 function removeCat(name) {
-  const catSnapshot    = [...D.categories];
-  const budgetSnapshot = D.budgets[name] ? JSON.parse(JSON.stringify(D.budgets[name])) : null;
+  if (!D.categoryParents) D.categoryParents = {};
+  const catSnapshot     = [...D.categories];
+  const parentsSnapshot = JSON.parse(JSON.stringify(D.categoryParents));
+  const budgetSnapshot  = D.budgets[name] ? JSON.parse(JSON.stringify(D.budgets[name])) : null;
+
+  // Removing a parent: unparent its children (they become standalone)
+  childCats(name).forEach(child => delete D.categoryParents[child]);
   D.categories = D.categories.filter(c => c !== name);
+  delete D.categoryParents[name];
   delete D.budgets[name];
   saveData();
   renderSettings();
   toastWithUndo(`Category "${name}" removed`, () => {
-    D.categories = catSnapshot;
+    D.categories      = catSnapshot;
+    D.categoryParents = parentsSnapshot;
     if (budgetSnapshot) D.budgets[name] = budgetSnapshot;
     saveData();
     renderSettings();
@@ -2672,7 +3012,7 @@ function showImportStatus(html, type = 'success') {
 }
 
 function importCSV(text) {
-  const lines = text.replace(/\r/g, '').split('\n').map(l => l.trim()).filter(Boolean);
+  const lines = text.replace(/^\uFEFF/, '').replace(/\r/g, '').split('\n').map(l => l.trim()).filter(Boolean);
   if (lines.length < 2) { showImportStatus('CSV is empty or has no data rows.', 'error'); return; }
 
   const header   = parseCSVRow(lines[0]).map(h => h.toLowerCase().trim());
@@ -2792,7 +3132,146 @@ importZone.addEventListener('drop',      e => {
 });
 
 /* ═══════════════════════════════════════════════════
-   15. BOOTSTRAP
+   15. CLOUD SYNC — GitHub Gist
+═══════════════════════════════════════════════════ */
+const GIST_CFG_KEY = 'budgetflow_gist';
+const GIST_FILE    = 'budgetflow_data.json';
+
+function loadGistCfg() {
+  try { return JSON.parse(localStorage.getItem(GIST_CFG_KEY) || '{}'); } catch { return {}; }
+}
+function saveGistCfg(cfg) { localStorage.setItem(GIST_CFG_KEY, JSON.stringify(cfg)); }
+
+function setSyncChip(msg, state /* 'ok'|'err'|'busy'|'' */) {
+  const chip = $('sync-chip');
+  const el   = $('sync-status');
+  if (chip) {
+    chip.textContent = msg;
+    chip.className   = 'sync-chip' + (state ? ' ' + state : '');
+    chip.style.display = '';
+  }
+  if (el) {
+    el.textContent = msg;
+    el.className   = 'text-xs ' + (state === 'ok' ? 'text-green' : state === 'err' ? 'text-red' : 'text-muted');
+  }
+}
+
+async function pushToGist() {
+  const cfg = loadGistCfg();
+  if (!cfg.id || !cfg.token) return;
+  try {
+    const res = await fetch(`https://api.github.com/gists/${cfg.id}`, {
+      method:  'PATCH',
+      headers: { 'Authorization': `Bearer ${cfg.token}`, 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify({ ...D, _ts: Date.now() }) } } }),
+    });
+    if (!res.ok) throw new Error(res.status);
+    const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    setSyncChip(`☁ Synced ${t}`, 'ok');
+    cfg.lastSync = Date.now();
+    saveGistCfg(cfg);
+  } catch (e) {
+    setSyncChip('☁ Sync failed', 'err');
+    console.warn('Gist push failed', e);
+  }
+}
+
+async function pullFromGist(silent = false) {
+  const cfg = loadGistCfg();
+  if (!cfg.id || !cfg.token) return false;
+  if (!silent) setSyncChip('☁ Syncing…', 'busy');
+  try {
+    const res = await fetch(`https://api.github.com/gists/${cfg.id}`, {
+      headers: { 'Authorization': `Bearer ${cfg.token}`, 'Accept': 'application/vnd.github+json' },
+    });
+    if (!res.ok) throw new Error(res.status);
+    const gist = await res.json();
+    const raw  = gist.files?.[GIST_FILE]?.content;
+    if (!raw) return false;
+    const remote = JSON.parse(raw);
+    // Use remote data only if it's newer than what we have locally
+    if ((remote._ts || 0) > (D._ts || 0)) {
+      D = Object.assign(defaultData(), remote);
+      localStorage.setItem(STORE_KEY, JSON.stringify(D));
+      cfg.lastSync = Date.now();
+      saveGistCfg(cfg);
+      const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      setSyncChip(`☁ Synced ${t}`, 'ok');
+      return true;  // data changed — caller should re-render
+    }
+    const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    setSyncChip(`☁ Synced ${t}`, 'ok');
+    return false;
+  } catch (e) {
+    if (!silent) setSyncChip('☁ Pull failed', 'err');
+    console.warn('Gist pull failed', e);
+    return false;
+  }
+}
+
+function renderAll() {
+  renderDashboard();
+  renderBudgets();
+  renderRecurring();
+  fillFilterDropdowns();
+  renderTxTable();
+  renderSettings();
+}
+
+async function syncNow() {
+  setSyncChip('☁ Syncing…', 'busy');
+  const pulled = await pullFromGist(true);
+  if (pulled) renderAll();
+  await pushToGist();
+}
+
+function saveGistSettings() {
+  const id    = $('s-gist-id').value.trim();
+  const token = $('s-gist-token').value.trim();
+  if (!id || !token) { toast('Enter both Gist ID and token', 'error'); return; }
+  const cfg = loadGistCfg();
+  cfg.id = id; cfg.token = token;
+  saveGistCfg(cfg);
+  toast('Sync settings saved — connecting…');
+  syncNow();
+}
+
+/* ═══════════════════════════════════════════════════
+   16. BUDGET ROLLOVER RECALC
+═══════════════════════════════════════════════════ */
+function recalcRollovers() {
+  clearRolloverCache();
+  saveData();
+  if ($('panel-budgets').classList.contains('active')) renderBudgets();
+  toast('Rollover totals recalculated ✓');
+}
+
+/* ═══════════════════════════════════════════════════
+   17. RECURRING — SKIP THIS MONTH
+═══════════════════════════════════════════════════ */
+function skipRec(id) {
+  const r = D.recurring.find(x => x.id === id);
+  if (!r) return;
+  if (!r.skipped) r.skipped = [];
+  const ym = currentYM();
+  if (!r.skipped.includes(ym)) r.skipped.push(ym);
+  saveData();
+  renderRecurring();
+  toast(`"${r.name}" skipped for this month`, 'info');
+}
+
+function unskipRec(id) {
+  const r = D.recurring.find(x => x.id === id);
+  if (!r) return;
+  const ym = currentYM();
+  r.skipped = (r.skipped || []).filter(m => m !== ym);
+  saveData();
+  renderRecurring();
+  toast(`"${r.name}" unskipped`, 'info');
+}
+
+/* ═══════════════════════════════════════════════════
+   18. BOOTSTRAP
 ═══════════════════════════════════════════════════ */
 document.querySelectorAll('.nav-btn').forEach(btn => {
   btn.addEventListener('click', () => goTab(btn.dataset.tab));
@@ -2801,22 +3280,24 @@ $('theme-btn').addEventListener('click', toggleTheme);
 
 loadData();
 // ── One-time migrations ───────────────────────────
-// Old `balance` → `startingBalance`
-if (D.balance !== undefined && D.startingBalance === 0) {
-  D.startingBalance = D.balance;
-  delete D.balance;
-}
-// Old single `payday` → new paycheck schedule (default monthly on that day)
-if (D.payday !== undefined && !D.paycheckFreq) {
-  D.paycheckFreq = 'monthly';
-  D.paycheckDay1 = D.payday;
-  delete D.payday;
-}
+if (D.balance !== undefined && D.startingBalance === 0) { D.startingBalance = D.balance; delete D.balance; }
+if (D.payday  !== undefined && !D.paycheckFreq)         { D.paycheckFreq = 'monthly'; D.paycheckDay1 = D.payday; delete D.payday; }
 saveData();
 // ─────────────────────────────────────────────────
 applyTheme(localStorage.getItem(THEME_KEY) || 'light');
 renderDashboard();
 renderSettings();
+
+// Populate sync chip if credentials exist
+const _gistCfg = loadGistCfg();
+if (_gistCfg.id && _gistCfg.token) {
+  if (_gistCfg.lastSync) {
+    const t = new Date(_gistCfg.lastSync).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    setSyncChip(`☁ Last synced ${t}`, 'ok');
+  }
+  // Pull in the background — re-render if remote is newer
+  pullFromGist(true).then(pulled => { if (pulled) renderAll(); });
+}
 </script>
 </body>
 </html>
