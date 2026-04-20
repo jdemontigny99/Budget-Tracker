@@ -1123,7 +1123,7 @@ tr:hover .tx-actions { opacity: 1; }
             <div class="import-zone" id="import-zone" onclick="document.getElementById('file-input').click()">
               <div class="import-zone-icon">📂</div>
               <div class="import-zone-title">Click or drag a file here</div>
-              <div class="import-zone-sub">Supports .csv or .json backup</div>
+              <div class="import-zone-sub">CSV columns: Date, Payee, Amount (required) · Notes, Category (optional) · .json backup also supported</div>
             </div>
             <input type="file" id="file-input" accept=".csv,.json" style="display:none" onchange="handleFileImport(event)">
           </div>
@@ -2139,6 +2139,7 @@ function submitBudget(e) {
   D.budgets[cat].rollover = rollover;
   if (!D.budgets[cat].rolledOver) D.budgets[cat].rolledOver = {};
 
+  clearRolloverCache();   // budget amount change invalidates cached rollover values
   saveData();
   closeModal('modal-budget');
   $('budget-cat').disabled = false;
@@ -2573,21 +2574,34 @@ function addCategory() {
 }
 
 function removeCat(name) {
-  if (!confirm(`Remove category "${name}"? Transactions won't be deleted.`)) return;
+  const catSnapshot    = [...D.categories];
+  const budgetSnapshot = D.budgets[name] ? JSON.parse(JSON.stringify(D.budgets[name])) : null;
   D.categories = D.categories.filter(c => c !== name);
   delete D.budgets[name];
   saveData();
   renderSettings();
-  toast(`"${name}" removed`, 'info');
+  toastWithUndo(`Category "${name}" removed`, () => {
+    D.categories = catSnapshot;
+    if (budgetSnapshot) D.budgets[name] = budgetSnapshot;
+    saveData();
+    renderSettings();
+    toast(`"${name}" restored`);
+  });
 }
 
 function clearAllData() {
-  if (!confirm('This will permanently delete ALL data. Are you sure?')) return;
+  const snapshot = JSON.parse(JSON.stringify(D));
   D = defaultData();
   saveData();
   renderDashboard();
   renderSettings();
-  toast('All data cleared', 'info');
+  toastWithUndo('All data cleared — undo within 5 s to restore', () => {
+    D = snapshot;
+    saveData();
+    renderDashboard();
+    renderSettings();
+    toast('Data restored');
+  }, 7000);
 }
 
 /* ═══════════════════════════════════════════════════
@@ -2661,51 +2675,70 @@ function importCSV(text) {
   const lines = text.replace(/\r/g, '').split('\n').map(l => l.trim()).filter(Boolean);
   if (lines.length < 2) { showImportStatus('CSV is empty or has no data rows.', 'error'); return; }
 
-  const header  = parseCSVRow(lines[0]).map(h => h.toLowerCase().trim());
-  const required = ['date', 'amount', 'type'];
+  const header   = parseCSVRow(lines[0]).map(h => h.toLowerCase().trim());
+  const required = ['date', 'payee', 'amount'];
   const missing  = required.filter(c => !header.includes(c));
   if (missing.length) {
     showImportStatus(`Missing required columns: <strong>${missing.join(', ')}</strong>`, 'error');
     return;
   }
 
-  const col = name => header.indexOf(name);
-  const iDate = col('date'), iAmt = col('amount'), iType = col('type'),
-        iDesc = col('description'), iCat = col('category'), iNotes = col('notes');
+  const col    = name => header.indexOf(name);
+  const iDate  = col('date');
+  const iPayee = col('payee');
+  const iAmt   = col('amount');
+  const iCat   = col('category');   // optional (-1 if absent)
+  const iNotes = col('notes');      // optional (-1 if absent)
+
+  // Normalise a date cell → YYYY-MM-DD.
+  // Accepts: YYYY-MM-DD, MM/DD/YYYY, M/D/YYYY, MM-DD-YYYY
+  function normaliseDate(raw) {
+    const s = (raw || '').trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;                          // already ISO
+    const slash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (slash) return `${slash[3]}-${slash[1].padStart(2,'0')}-${slash[2].padStart(2,'0')}`;
+    const dash = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+    if (dash)  return `${dash[3]}-${dash[1].padStart(2,'0')}-${dash[2].padStart(2,'0')}`;
+    return null;
+  }
 
   const existing = new Set(D.transactions.map(t => `${t.date}|${t.amount}|${t.description}`));
   let added = 0, dupes = 0, errors = 0;
 
   for (let i = 1; i < lines.length; i++) {
     try {
-      const cols = parseCSVRow(lines[i]);
-      const date   = (cols[iDate] || '').trim();
-      const amt    = parseFloat((cols[iAmt] || '').replace(/[$, ]/g, ''));
-      const type   = (cols[iType] || 'expense').toLowerCase().trim();
-      const desc   = iDesc  >= 0 ? (cols[iDesc]  || '').trim() : '';
-      const cat    = iCat   >= 0 ? (cols[iCat]   || 'Other').trim() : 'Other';
-      const notes  = iNotes >= 0 ? (cols[iNotes] || '').trim() : '';
+      const cols  = parseCSVRow(lines[i]);
+      const date  = normaliseDate(cols[iDate]);
+      const payee = (cols[iPayee] || '').trim();
+      const raw   = parseFloat((cols[iAmt] || '').replace(/[$, ]/g, ''));
+      const cat   = iCat   >= 0 ? (cols[iCat]   || '').trim() || 'Other' : 'Other';
+      const notes = iNotes >= 0 ? (cols[iNotes] || '').trim() : '';
 
-      // Validate
-      if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) { errors++; continue; }
-      if (isNaN(amt) || amt <= 0) { errors++; continue; }
-      if (!['income', 'expense'].includes(type)) { errors++; continue; }
+      // Validate required fields
+      if (!date)              { errors++; continue; }
+      if (!payee)             { errors++; continue; }
+      if (isNaN(raw) || raw === 0) { errors++; continue; }
 
-      const key = `${date}|${amt}|${desc}`;
+      // Infer type from sign: negative = expense, positive = income
+      const type   = raw < 0 ? 'expense' : 'income';
+      const amount = Math.abs(raw);
+
+      const key = `${date}|${amount}|${payee}`;
       if (existing.has(key)) { dupes++; continue; }
 
-      if (cat && !D.categories.includes(cat)) D.categories.push(cat);
-      D.transactions.push({ id: uid(), date, amount: amt, type, description: desc, category: cat, notes });
+      if (cat && cat !== 'Other' && !D.categories.includes(cat)) D.categories.push(cat);
+      D.transactions.push({ id: uid(), date, amount, type, description: payee, category: cat, notes });
       existing.add(key);
       added++;
     } catch { errors++; }
   }
 
+  clearRolloverCache();
   saveData();
   renderDashboard();
   const msg = `Imported <strong>${added}</strong> transaction${added !== 1 ? 's' : ''}.`
-    + (dupes  ? ` ${dupes} duplicate${dupes !== 1 ? 's' : ''} skipped.`    : '')
-    + (errors ? ` ${errors} row${errors !== 1 ? 's' : ''} had errors.` : '');
+    + (dupes  ? ` ${dupes} duplicate${dupes !== 1 ? 's' : ''} skipped.`  : '')
+    + (errors ? ` ${errors} row${errors !== 1 ? 's' : ''} had errors.`  : '');
   showImportStatus(msg, errors ? 'info' : 'success');
   toast(`${added} transactions imported`);
 }
